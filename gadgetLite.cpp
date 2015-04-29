@@ -1,10 +1,10 @@
 #include <TMB.hpp>
-#include <fenv.h> // Extra line needed 
+//#include <fenv.h> // Extra line needed 
  
 template<class Type> 
 Type objective_function<Type>::operator() () { 
 
-  feenableexcept(FE_INVALID | FE_OVERFLOW | FE_DIVBYZERO | FE_UNDERFLOW);	
+//  feenableexcept(FE_INVALID | FE_OVERFLOW | FE_DIVBYZERO | FE_UNDERFLOW);	
 //  feraiseexcept(FE_INVALID | FE_OVERFLOW | FE_DIVBYZERO | FE_UNDERFLOW);    
 	 
   DATA_ARRAY(SI);            //survey indices from the spring survey 
@@ -15,7 +15,7 @@ Type objective_function<Type>::operator() () {
   DATA_ARRAY(fleetCatches); //catches 
  
   DATA_VECTOR(SIlgroups);     //length group intervals for the survey idx  
- 
+//  DATA_VECTOR(matpar);        //maturity parameters
   DATA_INTEGER(firstyear);    //first year of the simulation 
   DATA_INTEGER(lastyear);     //last year of the simulation 
   DATA_INTEGER(maxlgr);       //maximum length group growth 
@@ -23,6 +23,7 @@ Type objective_function<Type>::operator() () {
   DATA_INTEGER(maxage);       //maximum age of the stock 
   DATA_INTEGER(minlength);    //maximum length of the stock 
   DATA_INTEGER(maxlength);    //maximum length of the stock 
+  DATA_INTEGER(rfunc);        //recruitment function 0='fixed effect',1='Ricker'
   DATA_VECTOR(M);             //natural mortality 
   DATA_VECTOR(initSigma);     //variation in initial length at age  
   DATA_VECTOR(wa);            //weight length relationship 
@@ -42,7 +43,11 @@ Type objective_function<Type>::operator() () {
   PARAMETER_VECTOR(SIa);         //alpha in log(Idx) = a + log(N) 
   PARAMETER(meanrec);            //average num recruits
   PARAMETER(log_sigma);            //var num recruits
-   
+  PARAMETER(rickmu);
+  PARAMETER(ricklambda);
+  
+  
+  
   Type lik_idx, lik_sldist, lik_saldist, 
     lik_cldist, lik_caldist,lik_rec;     // likelihood component scores 
   double numyears = lastyear - firstyear + 1; 
@@ -121,30 +126,39 @@ Type objective_function<Type>::operator() () {
   
   
   // initial length at age 
+  Type t0 = log(1-recl/linf)/kk;
   
   for(int a=minage-1; a < maxage; a++){ 
-    mu(a) = linf*(1-exp(-kk*(a+1))); 
+    mu(a) = linf*(1-exp(-kk*((a+1) + t0))); 
   } 
   
   //looping variables 
   int year, step, l, a;  
   
-  Type survBio, harvBio, survNum, harvNum; 
-  
+  Type survBio, harvBio, survNum, harvNum, rtmp, SSB; 
+  rtmp = Type(0);
+  SSB = Type(0);
   
   for(year=0; year < numyears; year++){ 
     for(step=0; step < 4; step++){ 
       
       if(step == 0){ // recruitment 
+        // ricker type recruitment         
+        rtmp = exp(recruits(year)-exp(log_sigma*2)/Type(2))*rickmu*SSB*
+        exp(-ricklambda*Type(1e-11)*SSB);
+        // rfunc swithes between the two
+        rtmp = recruits(year)*(Type(1)-rfunc)+rtmp*rfunc;
+      
+        
       for(l = minlength+1; l < maxlength; l++){ 	  
         stkArr(minage-1,l,year,step) = 
-        recruits(year)*(pnorm(len(l),recl,recsd) - 
+        rtmp*(pnorm(len(l),recl,recsd) - 
         pnorm(len(l-1),recl,recsd))*Type(1e9);	
       }  
       stkArr(minage-1,minlength,year,step) =  
-        recruits(year)*pnorm(len(minlength),recl,recsd)*Type(1e9); 
+        rtmp*pnorm(len(minlength),recl,recsd)*Type(1e9); 
       stkArr(minage,maxlength-1,year,step) =  
-        recruits(year)*(1-pnorm(len(maxlength-1),recl,recsd))*Type(1e9); 
+        rtmp*(1-pnorm(len(maxlength-1),recl,recsd))*Type(1e9); 
       }   
       
       if(year == 0 && step == 0){ // initial conditions 
@@ -193,6 +207,7 @@ Type objective_function<Type>::operator() () {
           harvNum += 0.25*0.2*suitComm(l)*stkArr(a,l,year,step);
         } 
       } 
+      
       
       // fleet operations 
       for(a = minage-1; a<maxage;a++){ 
@@ -243,7 +258,16 @@ Type objective_function<Type>::operator() () {
           stkArr(a,l,year,step) = exp(-M(a)*0.25)*stkArr(a,l,year,step); 
         } 
       } 
-    } 
+      
+      
+      SSB = Type(0);
+      for(a = 2; a<maxage;a++){ 
+        for(l = minlength; l<maxlength;l++){
+          SSB += wl(l)*stkArr(a,l,year,step);
+        } 
+      } 
+    }    
+    
     // survey index 
     l = minlength;
     for(int lg=0; lg < SIlgroups.size(); lg++){  
@@ -272,9 +296,9 @@ Type objective_function<Type>::operator() () {
     // deal with the survey first 
     lik_rec -= dnorm(recruits(year),meanrec,exp(log_sigma),true);
     for(int lg=0; lg < SIlgroups.size(); lg++){ 
-      
       lik_idx -= dnorm(log(SI(lg,year)),
-      (SIa(lg) + log(predidx(lg,year)+Type(0.00001))),Type(1.0),true);
+      (SIa(lg) + log(predidx(lg,year)+Type(0.00001))),
+      Type(1.0),true);
       
     }     
     for(l=minlength+1; l<maxlength; l++){ 

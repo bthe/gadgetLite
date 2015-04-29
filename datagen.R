@@ -1,7 +1,14 @@
 library(Rgadget)
 
+## ricker w. random variations
+opt <- gadget.options('ricker')
+opt$stocks$mat$spawnparameters$p1 <- rlnorm(20,sdlog=0.1)
+
+## stochastic recruitment
 opt <- gadget.options('simple1stock')
 opt$stocks$imm$n <- 1e6*exp(rnorm(20))
+
+## run the stuff
 gm <- gadget.skeleton(time=opt$time,area=opt$area,stock=opt$stocks,opt$fleets)
 gm.sim <- compiler::cmpfun(gadget.simulate)
 sim <- gm.sim(gm)
@@ -45,10 +52,11 @@ data <- list(SI=t(SI),
              initSigma=c(2.2472, 2.8982, 4.0705, 4.9276,
                          5.5404, 5.8072, 6.0233, 8, 9, 9),
              wa=c(10^(-5),3),
-             compW=rep(1,5))
+             compW=rep(1,5),
+             rfunc=1)
 
 
-parameters <- list(recruits=sim$gm@stocks$imm@renewal.data$number*1e-5,
+parameters <- list(recruits= opt$stocks$mat$spawnparameters$p1,#sim$gm@stocks$imm@renewal.data$number*1e-5
                    recl=9.897914,
                    recsd=2.2472,
                    initial=10*exp(-0.2*2:10),
@@ -60,7 +68,10 @@ parameters <- list(recruits=sim$gm@stocks$imm@renewal.data$number*1e-5,
                    linf=115,
                    beta=log(200),
                    SIa=rep(0,4),
-                   meanrec=mean(sim$gm@stocks$imm@renewal.data$number*1e-5),
-                   log_sigma = log(100))
+                   meanrec= 0,    #mean(sim$gm@stocks$imm@renewal.data$number*1e-5)),
+                   log_sigma = .1,
+                   rickmu=1,
+                   ricklambda=3.5)
 
-save(opt,gm,sim,simdat,parameters,data,file='runDat.RData')
+save(opt,gm,sim,simdat,parameters,data,file='runDatricker.RData')
+
