@@ -147,18 +147,18 @@ Type objective_function<Type>::operator() () {
         rtmp = exp(recruits(year)-exp(log_sigma*2)/Type(2))*rickmu*SSB*
         exp(-ricklambda*Type(1e-11)*SSB);
         // rfunc swithes between the two
-        rtmp = recruits(year)*(Type(1)-rfunc)+rtmp*rfunc;
+        rtmp = recruits(year)*Type(1e9)*(Type(1)-rfunc)+rtmp*rfunc;
       
         
       for(l = minlength+1; l < maxlength; l++){ 	  
         stkArr(minage-1,l,year,step) = 
         rtmp*(pnorm(len(l),recl,recsd) - 
-        pnorm(len(l-1),recl,recsd))*Type(1e9);	
+        pnorm(len(l-1),recl,recsd));	
       }  
       stkArr(minage-1,minlength,year,step) =  
-        rtmp*pnorm(len(minlength),recl,recsd)*Type(1e9); 
+        rtmp*pnorm(len(minlength),recl,recsd); 
       stkArr(minage,maxlength-1,year,step) =  
-        rtmp*(1-pnorm(len(maxlength-1),recl,recsd))*Type(1e9); 
+        rtmp*(1-pnorm(len(maxlength-1),recl,recsd)); 
       }   
       
       if(year == 0 && step == 0){ // initial conditions 
@@ -343,7 +343,7 @@ Type objective_function<Type>::operator() () {
   
   
   Type nll = (compW(0)*lik_idx + compW(1)*lik_sldist + compW(2)*lik_saldist + 
-  compW(3)*lik_cldist + compW(4)*lik_caldist);// + lik_rec); 
+  compW(3)*lik_cldist + compW(4)*lik_caldist + lik_rec); 
   
   REPORT(G);
   REPORT(stkArr);
