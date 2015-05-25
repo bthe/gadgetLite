@@ -6,7 +6,7 @@ opt.rick$stocks$mat$spawnparameters$p1 <- rlnorm(20,sdlog=0.1)
 
 ## stochastic recruitment
 opt <- gadget.options('simple1stock')
-opt$stocks$imm$n <- 1e6*exp(rnorm(20))
+opt$stocks$imm$n <- 1e6*rlnorm(20,sdlog=0.5)
 
 ## run the stuff
 
@@ -21,24 +21,61 @@ tDF <- compiler::cmpfun(Rgadget:::toDataFrame)
 simdat <- tDF(sim)
 simdat.rick <- tDF(sim.rick)
 
-obsgen <- function(simdat,sim,opt,rfunc=0){
-  SI <- acast(Rgadget:::survey.index(subset(simdat$stocks,step==2),
-                                     split=25*0:4),
-              year~SIgroup)
-  ldistSI <- acast(Rgadget:::ldist(subset(simdat$fleets,fleet=='surv'&step==2)),
-                   lgroup~year,value.var='p')
-  
-  ldistComm <- acast(Rgadget:::ldist(subset(simdat$fleets,fleet=='comm')),
-                     lgroup~year~step,value.var='p')
-  
-  aldistSI <- acast(Rgadget:::aldist(subset(simdat$fleets,fleet=='surv'&step==2)),
-                    age~lgroup~year,value.var='p')
-  
-  aldistComm <- acast(Rgadget:::aldist(subset(simdat$fleets,fleet=='comm')),
-                      age~lgroup~year~step,value.var='p')
-  fleetCatches <- acast(ddply(simdat$fleets,~year+step,summarise,
-                              catch=sum(num*10^(-5)*length^3)),
-                        year~step)
+obsgen <- function(simdat,sim,opt,rfunc=0,
+                   error=FALSE){
+    if(error){
+        sigma <- c(0.9,0.3,0.3,0.3)
+    } else {
+        sigma <- 0
+    }
+    
+    SI <- acast(Rgadget:::survey.index(subset(simdat$stocks,step==2),
+                                       split=25*0:4, sigma = sigma),
+                year~SIgroup)
+
+    if(error){
+        sigma <- 0.5
+    } else {
+        sigma <- 0
+    }
+       
+
+    tmp <- Rgadget:::ldist(subset(simdat$fleets,fleet=='surv'&step==2),
+                           sigma = sigma)
+    tmp <- ddply(tmp,~year, mutate,num=round(num*100/sum(num)),p=num/100)
+    ldistSI <- acast(tmp,
+                     lgroup~year,
+                     value.var='p')
+
+
+    ldistComm <- acast(Rgadget:::ldist(subset(simdat$fleets,fleet=='comm'),
+                                     sigma = sigma),
+                       lgroup~year~step,value.var='p')
+    
+    if(error){
+        sigma <- 0.1
+    } else {
+        sigma <- 0
+    }
+
+
+    tmp <- Rgadget:::aldist(subset(simdat$fleets,fleet=='surv'&step==2),
+                                     sigma = sigma)
+    tmp <- ddply(tmp,~year, mutate,num=round(num*100/sum(num)),p=num/100)
+    
+    aldistSI <- acast(tmp,
+                      age~lgroup~year,value.var='p')
+
+    tmp <- Rgadget:::aldist(subset(simdat$fleets,fleet=='comm'),
+                                     sigma = sigma)
+    tmp <- ddply(tmp,~year, mutate,num=round(num*100/sum(num)),p=num/100)
+    
+    aldistComm <- acast(tmp,
+                        age~lgroup~year~step,value.var='p')
+    
+    fleetCatches <- acast(ddply(simdat$fleets,~year+step,summarise,
+                                catch=sum(num*10^(-5)*length^3)),
+                          year~step)
 
   data <- list(SI=t(SI),
                ldistSI=ldistSI,
@@ -58,18 +95,18 @@ obsgen <- function(simdat,sim,opt,rfunc=0){
                initSigma=c(2.2472, 2.8982, 4.0705, 4.9276,
                            5.5404, 5.8072, 6.0233, 8, 9, 9),
                wa=c(10^(-5),3),
-               compW=rep(1,5),
+               compW=c(rep(1,5),0),
                rfunc=rfunc)
   
   if(rfunc==0){
-    rec <- sim$gm@stocks$imm@renewal.data$number*1e-5
-    mrec <- mean(sim$gm@stocks$imm@renewal.data$number*1e-5)
+    rec <- log(sim$gm@stocks$imm@renewal.data$number*1e-5)
+    mrec <- mean(rec)
   } else {
     rec <- opt$stocks$mat$spawnparameters$p1 
     mrec <- 0
   }
   
-  parameters <- list(recruits= rec ,#
+  parameters <- list(recruits= rec,#
                      recl=9.897914,
                      recsd=2.2472,
                      initial=10*exp(-0.2*2:10),
@@ -88,7 +125,9 @@ obsgen <- function(simdat,sim,opt,rfunc=0){
   return(list(data=data,parameters=parameters))
 }
 gen <- obsgen(simdat,sim,opt)
-save(opt,gm,sim,simdat,gen,file='runDat.RData')
+gen.err <- obsgen(simdat,sim,opt,error=TRUE)
+save(opt,gm,sim,simdat,gen,gen.err,file='runDat.RData')
+
 
 gen <- obsgen(simdat.rick,sim.rik,opt.rick,rfunc=1,sigma=0.5)
 save(opt.rick,gm.rick,sim.rick,simdat.rick,

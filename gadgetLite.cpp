@@ -147,7 +147,7 @@ Type objective_function<Type>::operator() () {
         rtmp = exp(recruits(year)-exp(log_sigma*2)/Type(2))*rickmu*SSB*
         exp(-ricklambda*Type(1e-11)*SSB);
         // rfunc swithes between the two
-        rtmp = recruits(year)*Type(1e9)*(Type(1)-rfunc)+rtmp*rfunc;
+        rtmp = exp(recruits(year))*Type(1e9)*(Type(1)-rfunc)+rtmp*rfunc;
       
         
       for(l = minlength+1; l < maxlength; l++){ 	  
@@ -343,7 +343,7 @@ Type objective_function<Type>::operator() () {
   
   
   Type nll = (compW(0)*lik_idx + compW(1)*lik_sldist + compW(2)*lik_saldist + 
-  compW(3)*lik_cldist + compW(4)*lik_caldist + lik_rec); 
+	      compW(3)*lik_cldist + compW(4)*lik_caldist + compW(5)*lik_rec); 
   
   REPORT(G);
   REPORT(stkArr);
@@ -356,6 +356,10 @@ Type objective_function<Type>::operator() () {
   REPORT(lik_cldist);
   REPORT(lik_caldist);
   REPORT(lik_rec);
+  REPORT(survArrLP);
+  REPORT(survArrALP);
+  REPORT(commArrLP);
+  REPORT(commArrALP);
   
   
   return nll;
