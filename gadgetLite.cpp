@@ -28,6 +28,7 @@ Type objective_function<Type>::operator() () {
   DATA_VECTOR(initSigma);     //variation in initial length at age  
   DATA_VECTOR(wa);            //weight length relationship 
   DATA_VECTOR(compW);         //likelihood component weights 
+  DATA_VECTOR(fleetMort);     //fleet mortality
    
   PARAMETER_VECTOR(recruits); //number of minage year olds 
   PARAMETER(recl);               //average length at recruitment 
@@ -45,7 +46,7 @@ Type objective_function<Type>::operator() () {
   PARAMETER(log_sigma);            //var num recruits
   PARAMETER(rickmu);
   PARAMETER(ricklambda);
-  
+  PARAMETER_VECTOR(lik_sigma);
   
   
   Type lik_idx, lik_sldist, lik_saldist, 
@@ -126,10 +127,10 @@ Type objective_function<Type>::operator() () {
   
   
   // initial length at age 
-  Type t0 = log(1-recl/linf)/kk;
+  //Type t0 = log(1-recl/linf)/kk-1;
   
   for(int a=minage-1; a < maxage; a++){ 
-    mu(a) = linf*(1-exp(-kk*((a+1) + t0))); 
+    mu(a) = linf*(1-exp(-kk*((a+1)))); 
   } 
   
   //looping variables 
@@ -137,62 +138,74 @@ Type objective_function<Type>::operator() () {
   
   Type survBio, harvBio, survNum, harvNum, rtmp, SSB; 
   rtmp = Type(0);
-  SSB = Type(0);
-  
+
   for(year=0; year < numyears; year++){ 
     for(step=0; step < 4; step++){ 
       
-      if(step == 0){ // recruitment 
-        // ricker type recruitment         
-        rtmp = exp(recruits(year)-exp(log_sigma*2)/Type(2))*rickmu*SSB*
-        exp(-ricklambda*Type(1e-11)*SSB);
-        // rfunc swithes between the two
-        rtmp = exp(recruits(year))*Type(1e9)*(Type(1)-rfunc)+rtmp*rfunc;
       
-        
-      for(l = minlength+1; l < maxlength; l++){ 	  
-        stkArr(minage-1,l,year,step) = 
-        rtmp*(pnorm(len(l),recl,recsd) - 
-        pnorm(len(l-1),recl,recsd));	
-      }  
-      stkArr(minage-1,minlength,year,step) =  
-        rtmp*pnorm(len(minlength),recl,recsd); 
-      stkArr(minage,maxlength-1,year,step) =  
-        rtmp*(1-pnorm(len(maxlength-1),recl,recsd)); 
-      }   
+   
       
       if(year == 0 && step == 0){ // initial conditions 
-      for(a = minage; a < maxage; a++){ 
-        for(l = minlength+1; l < maxlength; l++){	   
-          stkArr(a,l,year,step) =  
-          initial(a-1)*(pnorm(len(l),mu(a),initSigma(a)) - 
-          pnorm(len(l-1),mu(a),initSigma(a)))*Type(1e9); 
-        }  
-        // fix the edges 
-        stkArr(a,minlength,year,step) =  
-        initial(a-1)*pnorm(len(minlength),mu(a),initSigma(a))*Type(1e9); 
-        stkArr(a,maxlength-1,year,step) =  
-        initial(a-1)*(1-pnorm(len(maxlength-1),mu(a),initSigma(a)))*Type(1e9); 
-      } 
+	for(a = minage; a < maxage; a++){ 
+	  for(l = minlength+1; l < maxlength; l++){	   
+	    stkArr(a,l,year,step) =  
+	      initial(a-1)*(pnorm(len(l),mu(a),initSigma(a)) - 
+			    pnorm(len(l-1),mu(a),initSigma(a)))*Type(1e9); 
+	  }  
+	  // fix the edges 
+	  stkArr(a,minlength,year,step) =  
+	    initial(a-1)*pnorm(len(minlength),mu(a),initSigma(a))*Type(1e9); 
+	  stkArr(a,maxlength-1,year,step) =  
+	    initial(a-1)*(1-pnorm(len(maxlength-1),mu(a),initSigma(a)))*Type(1e9); 
+	  
+	   
+	} 
       } else if(step == 0) { // update age 
       
-      for(a = minage; a < maxage; a++){ 
-        for(l = minlength; l < maxlength; l++){ 
-          stkArr(a,l,year,0) = stkArr(a-1,l,year-1,3); 
-        } 
-      } 
-      // plus group 
-      for(l = minlength; l < maxlength; l++){ 
-        stkArr(maxage-1,l,year,0) += stkArr(maxage-1,l,year-1,3); 
-      } 
+	for(a = minage; a < maxage; a++){ 
+	  for(l = minlength; l < maxlength; l++){ 
+	    stkArr(a,l,year,0) = stkArr(a-1,l,year-1,3); 
+	  } 
+	} 
+	// plus group 
+	for(l = minlength; l < maxlength; l++){ 
+	  stkArr(maxage-1,l,year,0) += stkArr(maxage-1,l,year-1,3); 
+	} 
       } else { // move between timestep 
-      for(a = minage-1; a < maxage; a++){ 
-        for(l = minlength; l < maxlength; l++){ 
-          stkArr(a,l,year,step) = stkArr(a,l,year,step-1); 
-        } 
+	for(a = minage-1; a < maxage; a++){ 
+	  for(l = minlength; l < maxlength; l++){ 
+	    stkArr(a,l,year,step) = stkArr(a,l,year,step-1); 
+	  } 
+	} 
       } 
-      } 
-      
+
+
+      if(step == 0){ // recruitment 
+	SSB = Type(0);
+	for(a = 3; a<maxage;a++){ 
+	  for(l = minlength; l<maxlength;l++){
+	    SSB += wl(l)*stkArr(a,l,year,step);
+	  } 
+	}  
+
+        // ricker type recruitment         
+        rtmp = exp(recruits(year) - exp(log_sigma*2)/2)*rickmu*SSB*
+	  exp(-ricklambda*Type(1e-11)*SSB);
+        // rfunc swithes between the two
+	rtmp = exp(recruits(year))*Type(1e9)*(Type(1)-rfunc)+rtmp*rfunc;
+	
+        
+	for(l = minlength+1; l < maxlength; l++){ 	  
+	  stkArr(minage-1,l,year,step) = 
+	    rtmp*(pnorm(len(l),recl,recsd) - 
+		  pnorm(len(l-1),recl,recsd));	
+	}  
+	stkArr(minage-1,minlength,year,step) =  
+	  rtmp*pnorm(len(minlength),recl,recsd); 
+	stkArr(minage-1,maxlength-1,year,step) =  
+	  rtmp*(1-pnorm(len(maxlength-1),recl,recsd)); 
+      }   
+
       
       // calculate catches 
       harvBio = 0; 
@@ -204,7 +217,7 @@ Type objective_function<Type>::operator() () {
           harvBio += suitComm(l)*wl(l)*stkArr(a,l,year,step);
           survBio += suitSurv(l)*wl(l)*stkArr(a,l,year,step); 
           survNum += suitSurv(l)*stkArr(a,l,year,step);
-          harvNum += 0.25*0.2*suitComm(l)*stkArr(a,l,year,step);
+          harvNum += 0.25*fleetMort(4*year+step)*suitComm(l)*stkArr(a,l,year,step);
         } 
       } 
       
@@ -223,7 +236,7 @@ Type objective_function<Type>::operator() () {
           
           //	  commArr(a,l,year,step) = std::min(fleetCatches(year,step),0.95*harvBio)*
           //	    stkArr(a,l,year,step) * suitComm(l)/(harvBio); 
-          commArr(a,l,year,step) = Type(0.25*0.2)*suitComm(l)*stkArr(a,l,year,step);
+          commArr(a,l,year,step) = Type(0.25)*fleetMort(4*year+step)*suitComm(l)*stkArr(a,l,year,step);
           stkArr(a,l,year,step) -= commArr(a,l,year,step); 
           //reporting 
           commArrALP(a,l,year,step) = commArr(a,l,year,step)/(harvNum); 
@@ -259,20 +272,13 @@ Type objective_function<Type>::operator() () {
         } 
       } 
       
-      
-      SSB = Type(0);
-      for(a = 2; a<maxage;a++){ 
-        for(l = minlength; l<maxlength;l++){
-          SSB += wl(l)*stkArr(a,l,year,step);
-        } 
-      } 
     }    
     
     // survey index 
     l = minlength;
     for(int lg=0; lg < SIlgroups.size(); lg++){  
       predidx(lg,year) = 0; 
-      while(l <= std::min(SIlgroups(lg), Type(maxlength)-1)){ 
+      while(len(l) <= std::min(SIlgroups(lg), Type(maxlength)-1)){ 
         for(a=minage-1;a<maxage;a++){ 
           predidx(lg,year) += stkArr(a,l,year,1); 
         } 
@@ -281,7 +287,7 @@ Type objective_function<Type>::operator() () {
     } 
     
   }
-  
+   
   
   // likelihood functions 
   lik_idx = 0; 
@@ -291,48 +297,52 @@ Type objective_function<Type>::operator() () {
   lik_caldist = 0; 
   lik_rec = 0;
   
-  
+  lik_rec -= dnorm(recruits,Type(0),exp(log_sigma),true).sum()+ 0*meanrec;// + 0*log_sigma;
   for(year = 0; year < numyears; year++){ 
     // deal with the survey first 
-    lik_rec -= dnorm(recruits(year),meanrec,exp(log_sigma),true);
+
+    //lik_rec -= dnorm(recruits(year),Type(0),Type(0.01),true) 
+
     for(int lg=0; lg < SIlgroups.size(); lg++){ 
       lik_idx -= dnorm(log(SI(lg,year)),
-      (SIa(lg) + log(predidx(lg,year)+Type(0.00001))),
-      Type(1.0),true);
+		       (SIa(lg) + log(predidx(lg,year)+Type(0.00001))),
+		       exp(lik_sigma(0)),true);
       
     }     
-    for(l=minlength+1; l<maxlength; l++){ 
+    for(l=minlength; l<maxlength; l++){ 
       // assumes that missing full observation at year/step combination is  
       // indicated by -1 
-      if(ldistSI(l-minlength-1,year) != -1){ 
-        lik_sldist -= dnorm(ldistSI(l-minlength-1,year),
-        survArrLP(l,year,1),Type(1.0),true);  
+      if(ldistSI(l-minlength,year) != -1){ 
+        lik_sldist -= dnorm(ldistSI(l-minlength,year),
+			    survArrLP(l,year,1),
+			    exp(lik_sigma(1)),true);  
       } 
       
       for(a=minage-1; a < maxage; a++){ 
-        if(aldistSI(a,l-minlength-1,year) != -1){ 
-          lik_saldist -= dnorm(aldistSI(a,l-minlength-1,year),
-          survArrALP(a,l,year,1),Type(1.0),true);  
+        if(aldistSI(a,l-minlength,year) != -1){ 
+          lik_saldist -= dnorm(aldistSI(a,l-minlength,year),
+			       survArrALP(a,l,year,1),
+			       exp(lik_sigma(2)),true);  
         } 
       } 
       
     } 
     // now commercial 
     for(step = 0; step < 4; step++){ 
-      for(l=minlength+1; l<maxlength; l++){ 
+      for(l=minlength; l<maxlength; l++){ 
         // assumes that missing full observation at year/step combination is  
         // indicated by -1 
-        if(ldistComm(l-minlength-1,year,step) != -1){ 
-          lik_cldist -= dnorm(ldistComm(l-minlength-1,year,step),
-          commArrLP(l,year,step), 
-          Type(1.0),true);  
+        if(ldistComm(l-minlength,year,step) != -1){ 
+          lik_cldist -= dnorm(ldistComm(l-minlength,year,step),
+			      commArrLP(l,year,step), 
+			      exp(lik_sigma(3)),true);  
         } 
         
         for(a=minage-1; a < maxage; a++){ 
-          if(aldistComm(a,l-minlength-1,year,step) != -1){ 
-            lik_caldist -= dnorm(aldistComm(a,l-minlength-1,year,step),
-            commArrALP(a,l,year,step), 
-            Type(1.0),true);  
+          if(aldistComm(a,l-minlength,year,step) != -1){ 
+            lik_caldist -= dnorm(aldistComm(a,l-minlength,year,step),
+				 commArrALP(a,l,year,step), 
+				 exp(lik_sigma(4)),true);  
           } 
         }
         
@@ -343,7 +353,7 @@ Type objective_function<Type>::operator() () {
   
   
   Type nll = (compW(0)*lik_idx + compW(1)*lik_sldist + compW(2)*lik_saldist + 
-	      compW(3)*lik_cldist + compW(4)*lik_caldist + compW(5)*lik_rec); 
+	      compW(3)*lik_cldist + compW(4)*lik_caldist + compW(5)*lik_rec);
   
   REPORT(G);
   REPORT(stkArr);
@@ -360,7 +370,8 @@ Type objective_function<Type>::operator() () {
   REPORT(survArrALP);
   REPORT(commArrLP);
   REPORT(commArrALP);
-  
+
+  //ADREPORT(ricklambda);
   
   return nll;
 } 

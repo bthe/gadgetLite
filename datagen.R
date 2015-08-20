@@ -2,29 +2,32 @@ library(Rgadget)
 
 ## ricker w. random variations
 opt.rick <- gadget.options('ricker')
-opt.rick$stocks$mat$spawnparameters$p1 <- rlnorm(20,sdlog=0.1)
+opt.rick$fleets$comm$Fy <- c(rep(0.2,40),rep(0.1,40))
+opt.rick$stocks$mat$spawnparameters$p1 <- rlnorm(20,sdlog=0.3)
 
 ## stochastic recruitment
 opt <- gadget.options('simple1stock')
 opt$stocks$imm$n <- 1e6*rlnorm(20,sdlog=0.5)
-
+opt$fleets$comm$Fy <- opt.rick$fleets$comm$Fy
 ## run the stuff
 
 gm <- gadget.skeleton(time=opt$time,area=opt$area,stock=opt$stocks,opt$fleets)
 gm.rick <- gadget.skeleton(time=opt.rick$time,area=opt.rick$area,
                            stock=opt.rick$stocks,opt.rick$fleets)
-
-gm.sim <- compiler::cmpfun(gadget.simulate)
+if(length(grep('gm.sim',ls()))==0){
+    gm.sim <- compiler::cmpfun(gadget.simulate)
+    tDF <- compiler::cmpfun(Rgadget:::toDataFrame)
+}
 sim <- gm.sim(gm)
 sim.rick <- gm.sim(gm.rick)
-tDF <- compiler::cmpfun(Rgadget:::toDataFrame)
+
 simdat <- tDF(sim)
 simdat.rick <- tDF(sim.rick)
 
 obsgen <- function(simdat,sim,opt,rfunc=0,
                    error=FALSE){
     if(error){
-        sigma <- c(0.9,0.3,0.3,0.3)
+        sigma <- c(0.5,0.3,0.3,0.7)
     } else {
         sigma <- 0
     }
@@ -42,7 +45,9 @@ obsgen <- function(simdat,sim,opt,rfunc=0,
 
     tmp <- Rgadget:::ldist(subset(simdat$fleets,fleet=='surv'&step==2),
                            sigma = sigma)
-    tmp <- ddply(tmp,~year, mutate,num=round(num*100/sum(num)),p=num/100)
+    tmp <- ddply(tmp,~year, mutate,
+                 #num=round(num*100/sum(num)),
+                 p=num/sum(num))
     ldistSI <- acast(tmp,
                      lgroup~year,
                      value.var='p')
@@ -61,14 +66,18 @@ obsgen <- function(simdat,sim,opt,rfunc=0,
 
     tmp <- Rgadget:::aldist(subset(simdat$fleets,fleet=='surv'&step==2),
                                      sigma = sigma)
-    tmp <- ddply(tmp,~year, mutate,num=round(num*100/sum(num)),p=num/100)
+    tmp <- ddply(tmp,~year, mutate,
+                 #num=round(num*100/sum(num)),
+                 p=num/sum(num))
     
     aldistSI <- acast(tmp,
                       age~lgroup~year,value.var='p')
 
     tmp <- Rgadget:::aldist(subset(simdat$fleets,fleet=='comm'),
                                      sigma = sigma)
-    tmp <- ddply(tmp,~year, mutate,num=round(num*100/sum(num)),p=num/100)
+    tmp <- ddply(tmp,~year, mutate,
+                 #num=round(num*100/sum(num)),
+                 p=num/sum(num))
     
     aldistComm <- acast(tmp,
                         age~lgroup~year~step,value.var='p')
@@ -96,17 +105,11 @@ obsgen <- function(simdat,sim,opt,rfunc=0,
                            5.5404, 5.8072, 6.0233, 8, 9, 9),
                wa=c(10^(-5),3),
                compW=c(rep(1,5),0),
-               rfunc=rfunc)
+               rfunc=0,
+               fleetMort=opt$fleets$comm$Fy)
   
-  if(rfunc==0){
-    rec <- log(sim$gm@stocks$imm@renewal.data$number*1e-5)
-    mrec <- mean(rec)
-  } else {
-    rec <- opt$stocks$mat$spawnparameters$p1 
-    mrec <- 0
-  }
   
-  parameters <- list(recruits= rec,#
+  parameters <- list(recruits=rep(0,20),#
                      recl=9.897914,
                      recsd=2.2472,
                      initial=10*exp(-0.2*2:10),
@@ -118,18 +121,18 @@ obsgen <- function(simdat,sim,opt,rfunc=0,
                      linf=115,
                      beta=log(200),
                      SIa=rep(0,4),
-                     meanrec= mrec,    #,
+                     meanrec= 1,    #,
                      log_sigma = .1,
                      rickmu=1,
-                     ricklambda=3.5)
+                     ricklambda=3.5,
+                     lik_sigma=rep(0,5))
   return(list(data=data,parameters=parameters))
 }
 gen <- obsgen(simdat,sim,opt)
 gen.err <- obsgen(simdat,sim,opt,error=TRUE)
 save(opt,gm,sim,simdat,gen,gen.err,file='runDat.RData')
 
-
-gen <- obsgen(simdat.rick,sim.rik,opt.rick,rfunc=1,sigma=0.5)
+gen <- obsgen(simdat.rick,sim.rick,opt,rfunc=1)
+gen.err <- obsgen(simdat.rick,sim.rick,opt.rick,rfunc=1,error=TRUE)
 save(opt.rick,gm.rick,sim.rick,simdat.rick,
-     gen,file='runDatrick.RData')
-
+     gen,gen.err,file='runDatrick.RData')
