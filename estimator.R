@@ -1,5 +1,5 @@
-mGL <- function(dat,par,bounds=FALSE,random=NULL,mapGL){
-    obj <- MakeADFun(dat,par,random="recruits",
+omGL <- function(dat,par,bounds=FALSE,random=NULL,mapGL){
+    obj <- MakeADFun(dat,par,random=random,
                      map=mapGL,
                      DLL="gadgetLite")
     if(bounds){
